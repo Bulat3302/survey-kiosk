@@ -1,0 +1,40 @@
+services:
+  survey-kiosk:
+    build: .
+    image: survey-kiosk:latest
+    container_name: survey-kiosk
+    ports:
+      # Сайт доступен на http://localhost:8080
+      # Порт хоста можно поменять: "80:80", "3000:80" и т.д.
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  api:
+    build: ./api
+    container_name: survey-answers-api
+    # Работаем под обычным пользователем (по умолчанию uid 1000),
+    # чтобы файлы ответов в ./data принадлежали вам, а не root
+    # (иначе их не удалить без sudo). При необходимости задайте
+    # свои значения: UID=1000 GID=1000 docker compose up -d
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      # API-ключ для вебхука берётся из файла .env рядом с этим файлом;
+      # сам .env в гит не попадает (см. .gitignore). Образец — .env.example.
+      API_KEY: "${API_KEY:?Задайте API_KEY в файле .env}"
+      DATA_DIR: /data
+    volumes:
+      # Принятые анкеты: ./data/answers.jsonl
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; exit(0 if urllib.request.urlopen('http://localhost:3000/health').status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

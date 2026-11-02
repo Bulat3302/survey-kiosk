@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Опрос</title>
+<style>
+  :root {
+    --bg: #f5f7fb; --surface: #ffffff; --border: #dde3ec;
+    --text: #0f172a; --muted: #64748b;
+    --accent: #4f46e5; --accent-hover: #4338ca;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 16px;
+  }
+  .card {
+    max-width: 680px;
+    margin: 24px auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  h1 { font-size: 22px; margin-bottom: 10px; }
+  #description { color: var(--muted); margin-bottom: 18px; white-space: pre-line; }
+  fieldset { border: 0; margin-bottom: 22px; }
+  legend { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
+  .help { font-size: 13px; color: var(--muted); margin-bottom: 10px; white-space: pre-line; }
+  textarea {
+    width: 100%; min-height: 90px; resize: vertical;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    font: inherit; font-size: 15px;
+  }
+  input[type="text"] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    font: inherit; font-size: 15px;
+  }
+  textarea:focus, input[type="text"]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .date-row { display: flex; gap: 10px; }
+  .date-row input { flex: 1; }
+  .consent {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 13px; color: var(--muted); margin-bottom: 18px;
+  }
+  .consent input { margin-top: 2px; width: 16px; height: 16px; accent-color: var(--accent); }
+  button {
+    width: 100%; padding: 13px; font-size: 16px; font-weight: 600;
+    color: #fff; background: var(--accent); border: 0; border-radius: 10px;
+    cursor: pointer; transition: background 0.15s ease;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { background: #a5b4fc; cursor: default; }
+  #thanks { text-align: center; padding: 24px 0; }
+  #thanks .emoji { font-size: 44px; }
+  #thanks h2 { font-size: 24px; margin: 12px 0 8px; }
+  #thanks p { color: var(--muted); }
+  #error {
+    margin-top: 14px; padding: 10px 12px;
+    background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+    color: #b91c1c; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="title">Загрузка опроса…</h1>
+    <p id="description"></p>
+    <form id="form">
+      <div id="questions"></div>
+      <label class="consent">
+        <input type="checkbox" id="consent" required>
+        Нажимая кнопку «Отправить», я даю своё согласие на обработку моих персональных данных в соответствии с условиями обработки персональных данных
+      </label>
+      <button type="submit" id="submit">Отправить</button>
+    </form>
+    <div id="thanks" hidden>
+      <div class="emoji">🎉</div>
+      <h2 id="confirm-msg">Ваш ответ записан</h2>
+      <p>Сейчас вы вернётесь на главную страницу…</p>
+    </div>
+    <p id="error" hidden></p>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+      var formEl = document.getElementById("form");
+      var questionsEl = document.getElementById("questions");
+      var thanksEl = document.getElementById("thanks");
+      var errorEl = document.getElementById("error");
+      var submitBtn = document.getElementById("submit");
+      var definition = null;
+
+      function renderQuestion(q, idx) {
+        var wrap = document.createElement("fieldset");
+        var legend = document.createElement("legend");
+        legend.textContent = idx + 1 + ". " + q.title;
+        wrap.appendChild(legend);
+
+        if (q.help_text) {
+          var help = document.createElement("p");
+          help.className = "help";
+          help.textContent = q.help_text;
+          wrap.appendChild(help);
+        }
+
+        var input;
+        if (q.question_type === "date") {
+          var isRange = q.date_format === "range";
+          if (isRange) {
+            var row = document.createElement("div");
+            row.className = "date-row";
+            var from = document.createElement("input");
+            from.type = "text";
+            from.name = "q-" + q.id + "-from";
+            from.placeholder = "ДД.ММ.ГГГГ (с)";
+            from.pattern = "\\d{2}\\.\\d{2}\\.\\d{4}";
+            from.required = Boolean(q.is_required);
+            var to = document.createElement("input");
+            to.type = "text";
+            to.name = "q-" + q.id + "-to";
+            to.placeholder = "ДД.ММ.ГГГГ (по)";
+            to.pattern = "\\d{2}\\.\\d{2}\\.\\d{4}";
+            to.required = Boolean(q.is_required);
+            row.appendChild(from);
+            row.appendChild(to);
+            wrap.appendChild(row);
+          } else {
+            input = document.createElement("input");
+            input.type = "text";
+            input.name = "q-" + q.id + "-from";
+            input.placeholder = "ДД.ММ.ГГГГ";
+            input.pattern = "\\d{2}\\.\\d{2}\\.\\d{4}";
+            input.required = Boolean(q.is_required);
+            wrap.appendChild(input);
+          }
+        } else {
+          // text, number и неизвестные типы — текстовое поле
+          input = document.createElement("textarea");
+          input.name = "q-" + q.id;
+          input.maxLength = q.max_characters || 1000;
+          input.placeholder = "Введите ответ";
+          input.required = Boolean(q.is_required);
+          wrap.appendChild(input);
+        }
+        questionsEl.appendChild(wrap);
+      }
+
+      function buildAnswers() {
+        var answers = [];
+        definition.questions.forEach(function (q) {
+          var base = {
+            question: q.id,
+            choices: [],
+            text_answer: "",
+            other_answer: null,
+            match_answer: {},
+          };
+          if (q.question_type === "date") {
+            base.date_from = (formEl.elements["q-" + q.id + "-from"] || {}).value || null;
+            base.date_to = (formEl.elements["q-" + q.id + "-to"] || {}).value || null;
+            base.time_from = null;
+            base.time_to = null;
+          } else {
+            base.text_answer = (formEl.elements["q-" + q.id] || {}).value || "";
+          }
+          answers.push(base);
+        });
+        return answers;
+      }
+
+      fetch("api/form")
+        .then(function (r) { return r.json(); })
+        .then(function (def) {
+          definition = def;
+          document.title = def.title || "Опрос";
+          document.getElementById("title").textContent = def.title || "Опрос";
+          document.getElementById("description").textContent = def.description || "";
+          (def.questions || []).forEach(renderQuestion);
+        })
+        .catch(function () {
+          document.getElementById("title").textContent = "Не удалось загрузить опрос";
+          submitBtn.disabled = true;
+        });
+
+      formEl.addEventListener("submit", function (event) {
+        event.preventDefault();
+        if (!definition) return;
+        errorEl.hidden = true;
+        submitBtn.disabled = true;
+
+        fetch("api/form-submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers: buildAnswers() }),
+        })
+          .then(function (r) {
+            return r.json().then(function (body) { return { status: r.status, body: body }; });
+          })
+          .then(function (res) {
+            if (res.status >= 200 && res.status < 300) {
+              formEl.hidden = true;
+              document.getElementById("confirm-msg").textContent =
+                definition.confirmation_message || "Ваш ответ записан";
+              thanksEl.hidden = false;
+              setTimeout(function () {
+                if (window.self !== window.top) {
+                  // Встроены в главную страницу (iframe) — сбрасываемся
+                  // к свежей форме для следующего участника
+                  window.location.reload();
+                } else {
+                  window.close();
+                  // если вкладку не удалось закрыть — возвращаемся на главную
+                  setTimeout(function () { window.location.href = "/"; }, 300);
+                }
+              }, 2500);
+            } else {
+              var err = "Ошибка отправки";
+              if (res.body && res.body.error) {
+                err = res.body.error.message || JSON.stringify(res.body.error);
+              }
+              errorEl.textContent = err;
+              errorEl.hidden = false;
+              submitBtn.disabled = false;
+            }
+          })
+          .catch(function () {
+            errorEl.textContent = "Нет связи с сервером — попробуйте ещё раз.";
+            errorEl.hidden = false;
+            submitBtn.disabled = false;
+          });
+      });
+    })();
+  </script>
+</body>
+</html>

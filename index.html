@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Опрос — стойка</title>
+  <!-- ?v= версия ассетов: меняйте при правках css/js, чтобы браузеры не отдавали старый кэш -->
+  <link rel="stylesheet" href="css/style.css?v=20261030j">
+</head>
+<body>
+  <main class="kiosk">
+    <!-- Левая половина: опрос сразу на экране (наша копия, ответы уходят в настоящую форму) -->
+    <section class="pane pane-survey">
+      <iframe id="survey-frame" src="survey.html" title="Опрос"></iframe>
+      <p id="status" class="status-bar">Подключение к серверу…</p>
+    </section>
+
+    <!-- Правая половина: QR-код на официальный опрос (для телефонов) -->
+    <section class="pane pane-qr">
+      <div class="qr-card">
+        <div id="qrcode"></div>
+        <h2>Пройдите опрос на своём телефоне</h2>
+        <p class="hint">Наведите камеру телефона на QR-код</p>
+        <p id="survey-url" class="qr-url"></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/config.js?v=20261030j"></script>
+  <script src="js/lib/qrcode.min.js?v=20261030j"></script>
+  <script src="js/app.js?v=20261030j"></script>
+</body>
+</html>
