@@ -1,12 +1,10 @@
 (function () {
   "use strict";
 
-  // Настройка из js/config.js
-  var surveyUrl = window.SURVEY_URL || "";
-
-  // Относительный путь дополняем адресом стойки
-  if (surveyUrl && !/^https?:\/\//i.test(surveyUrl) && surveyUrl.indexOf("//") !== 0) {
-    surveyUrl = new URL(surveyUrl, window.location.href).href;
+  // Запасная ссылка на опрос (используется, если сервер недоступен)
+  var fallbackUrl = window.SURVEY_URL || "";
+  if (fallbackUrl && !/^https?:\/\//i.test(fallbackUrl) && fallbackUrl.indexOf("//") !== 0) {
+    fallbackUrl = new URL(fallbackUrl, window.location.href).href;
   }
 
   // Режим «только QR» (/?qr=1): левая панель скрыта, QR на весь экран
@@ -14,10 +12,37 @@
     document.querySelector(".kiosk").classList.add("qr-only");
   }
 
-  // Подпись с адресом под QR-кодом
   var urlLabel = document.getElementById("survey-url");
-  urlLabel.textContent = surveyUrl;
-  urlLabel.title = surveyUrl;
+
+  function renderQr(url) {
+    if (!url) {
+      return;
+    }
+    urlLabel.textContent = url;
+    urlLabel.title = url;
+    document.getElementById("qrcode").innerHTML = "";
+    new QRCode(document.getElementById("qrcode"), {
+      text: url,
+      width: 320,
+      height: 320,
+      colorDark: "#0f172a",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }
+
+  // Актуальную ссылку берём с сервера — её меняют на странице /setting/.
+  // Если сервер недоступен, используем запасную из js/config.js.
+  fetch("api/form-link")
+    .then(function (r) {
+      return r.json();
+    })
+    .then(function (data) {
+      renderQr(data && data.form_url ? data.form_url : fallbackUrl);
+    })
+    .catch(function () {
+      renderQr(fallbackUrl);
+    });
 
   // Строка-статус под опросом: видно, доходят ли ответы
   var statusEl = document.getElementById("status");
@@ -52,14 +77,4 @@
   }
 
   pollOnce();
-
-  // Правая половина: QR-код на официальный опрос
-  new QRCode(document.getElementById("qrcode"), {
-    text: surveyUrl,
-    width: 320,
-    height: 320,
-    colorDark: "#0f172a",
-    colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.M
-  });
 })();

@@ -9,6 +9,7 @@
     --bg: #f5f7fb; --surface: #ffffff; --border: #dde3ec;
     --text: #0f172a; --muted: #64748b;
     --accent: #4f46e5; --accent-hover: #4338ca;
+    --accent-soft: #eef2ff;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -30,30 +31,80 @@
   fieldset { border: 0; margin-bottom: 22px; }
   legend { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
   .help { font-size: 13px; color: var(--muted); margin-bottom: 10px; white-space: pre-line; }
-  textarea {
-    width: 100%; min-height: 90px; resize: vertical;
-    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
-    font: inherit; font-size: 15px;
-  }
-  input[type="text"] {
+  textarea, input[type="text"], input[type="tel"] {
     width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
     font: inherit; font-size: 15px;
   }
-  textarea:focus, input[type="text"]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  textarea { min-height: 90px; resize: vertical; }
+  textarea:focus, input[type="text"]:focus, input[type="tel"]:focus {
+    outline: 2px solid var(--accent); border-color: transparent;
+  }
   .date-row { display: flex; gap: 10px; }
   .date-row input { flex: 1; }
+
+  /* Варианты ответа */
+  .opt {    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    margin-bottom: 8px; cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .opt:hover { border-color: var(--accent); }
+  .opt input { margin-top: 2px; width: 16px; height: 16px; accent-color: var(--accent); flex: none; }
+  .opt-text { font-size: 15px; }
+  .other-input { margin: 4px 0 10px 0; display: none; }
+  .other-input.visible { display: block; }
+
+  /* Вложения к вопросам и картинки вариантов */
+  .q-image {
+    display: block; max-width: 100%; height: auto;
+    margin: 6px 0 14px; border-radius: 10px; border: 1px solid var(--border);
+  }
+  .q-file {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin: 4px 0 14px; padding: 8px 12px;
+    border: 1px solid var(--border); border-radius: 10px;
+    font-size: 14px; color: var(--accent); text-decoration: none;
+    word-break: break-all;
+  }
+  .q-file:hover { background: var(--accent-soft); }
+  .opt-image {
+    display: block; max-width: 140px; height: auto;
+    margin-top: 6px; border-radius: 8px; border: 1px solid var(--border);
+  }
+
+  /* Шкала */
+  .scale { display: flex; gap: 8px; flex-wrap: wrap; }
+  .scale label {
+    min-width: 48px; height: 48px; padding: 0 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 10px;
+    cursor: pointer; font-size: 16px; font-weight: 600;
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .scale label:hover { border-color: var(--accent); }
+  .scale input { position: absolute; opacity: 0; pointer-events: none; }
+  .scale input:checked + span { color: #fff; }
+  .scale label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .scale span { pointer-events: none; }
+
+  .unsupported {
+    padding: 12px; border-radius: 10px;
+    background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 14px;
+  }
+
   .consent {
     display: flex; align-items: flex-start; gap: 10px;
     font-size: 13px; color: var(--muted); margin-bottom: 18px;
   }
   .consent input { margin-top: 2px; width: 16px; height: 16px; accent-color: var(--accent); }
-  button {
+  button[type="submit"] {
     width: 100%; padding: 13px; font-size: 16px; font-weight: 600;
     color: #fff; background: var(--accent); border: 0; border-radius: 10px;
     cursor: pointer; transition: background 0.15s ease;
   }
-  button:hover { background: var(--accent-hover); }
-  button:disabled { background: #a5b4fc; cursor: default; }
+  button[type="submit"]:hover { background: var(--accent-hover); }
+  button[type="submit"]:disabled { background: #a5b4fc; cursor: default; }
+
   #thanks { text-align: center; padding: 24px 0; }
   #thanks .emoji { font-size: 44px; }
   #thanks h2 { font-size: 24px; margin: 12px 0 8px; }
@@ -61,7 +112,7 @@
   #error {
     margin-top: 14px; padding: 10px 12px;
     background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
-    color: #b91c1c; font-size: 14px;
+    color: #b91c1c; font-size: 14px; white-space: pre-line;
   }
 </style>
 </head>
@@ -69,108 +120,341 @@
   <div class="card">
     <h1 id="title">Загрузка опроса…</h1>
     <p id="description"></p>
-    <form id="form">
+    <form id="form" novalidate>
       <div id="questions"></div>
       <label class="consent">
-        <input type="checkbox" id="consent" required>
+        <input type="checkbox" id="consent">
         Нажимая кнопку «Отправить», я даю своё согласие на обработку моих персональных данных в соответствии с условиями обработки персональных данных
       </label>
       <button type="submit" id="submit">Отправить</button>
+      <p id="error" hidden></p>
     </form>
     <div id="thanks" hidden>
       <div class="emoji">🎉</div>
       <h2 id="confirm-msg">Ваш ответ записан</h2>
-      <p>Сейчас вы вернётесь на главную страницу…</p>
+      <p>Сейчас форма обновится для следующего участника…</p>
     </div>
-    <p id="error" hidden></p>
   </div>
 
   <script>
     (function () {
       "use strict";
+
       var formEl = document.getElementById("form");
       var questionsEl = document.getElementById("questions");
       var thanksEl = document.getElementById("thanks");
       var errorEl = document.getElementById("error");
       var submitBtn = document.getElementById("submit");
       var definition = null;
+      var unsupportedCount = 0;
+
+      function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      }
+
+      // Видимые и доступные варианты (как на платформе)
+      function visibleChoices(q) {
+        return (q.choices || []).filter(function (c) {
+          return c && c.is_available !== false && c.is_visible !== false;
+        });
+      }
+
+      // Вложение к вопросу: картинка (media) или ссылка на файл (document)
+      var IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i;
+
+      function fileName(url) {
+        try {
+          return decodeURIComponent(String(url).split("/").pop().split("?")[0]);
+        } catch (e) {
+          return "файл";
+        }
+      }
+
+      function attachmentNode(url, type, imageClass) {
+        var looksImage = type === "media" || IMAGE_RE.test(String(url || ""));
+        if (looksImage) {
+          var img = el("img", imageClass || "q-image");
+          img.src = url;
+          img.alt = "Изображение к вопросу";
+          img.loading = "lazy";
+          img.onerror = function () {
+            // Если картинка не открылась — показываем хотя бы ссылку
+            var link = el("a", "q-file", "Открыть изображение");
+            link.href = url;
+            link.target = "_blank";
+            link.rel = "noopener";
+            if (img.parentNode) img.parentNode.replaceChild(link, img);
+          };
+          return img;
+        }
+        var a = el("a", "q-file", "📎 " + fileName(url));
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.download = "";
+        return a;
+      }
+
+      function textField(q) {
+        var area = el("textarea");
+        area.name = "q-" + q.id;
+        if (q.max_characters) area.maxLength = q.max_characters;
+        area.placeholder = "Введите ответ";
+        return area;
+      }
+
+      function numberField(q) {
+        var input = el("input");
+        input.type = "text";
+        input.inputMode = "numeric";
+        input.name = "q-" + q.id;
+        input.placeholder = "Введите число";
+        return input;
+      }
+
+      function dateFields(q, wrap) {
+        var isRange = q.date_format === "range" || q.date_format === "range_date";
+        var row = el("div", "date-row");
+        var from = el("input");
+        from.type = "text";
+        from.name = "q-" + q.id + "-from";
+        from.placeholder = isRange ? "ДД.ММ.ГГГГ (с)" : "ДД.ММ.ГГГГ";
+        from.setAttribute("pattern", "\\d{2}\\.\\d{2}\\.\\d{4}");
+        row.appendChild(from);
+        if (isRange) {
+          var to = el("input");
+          to.type = "text";
+          to.name = "q-" + q.id + "-to";
+          to.placeholder = "ДД.ММ.ГГГГ (по)";
+          to.setAttribute("pattern", "\\d{2}\\.\\d{2}\\.\\d{4}");
+          row.appendChild(to);
+        }
+        wrap.appendChild(row);
+
+        // Время, если форма его требует
+        if (q.time_format && q.time_format !== "none") {
+          var timeRange = q.time_format === "range";
+          var trow = el("div", "date-row");
+          var tfrom = el("input");
+          tfrom.type = "text";
+          tfrom.name = "q-" + q.id + "-time-from";
+          tfrom.placeholder = timeRange ? "ЧЧ:ММ (с)" : "ЧЧ:ММ";
+          trow.appendChild(tfrom);
+          if (timeRange) {
+            var tto = el("input");
+            tto.type = "text";
+            tto.name = "q-" + q.id + "-time-to";
+            tto.placeholder = "ЧЧ:ММ (по)";
+            trow.appendChild(tto);
+          }
+          wrap.appendChild(trow);
+        }
+      }
+
+      // Одиночный / множественный выбор (+ «Другое»)
+      function choiceFields(q, wrap) {
+        var multiple = q.question_type === "multiple_choice";
+        var choices = visibleChoices(q);
+        var name = "q-" + q.id + "-choice";
+        var otherId = "q-" + q.id + "-other";
+        var otherTextId = "q-" + q.id + "-other-text";
+
+        var inputs = [];
+        choices.forEach(function (c) {
+          var label = el("label", "opt");
+          var input = el("input");
+          input.type = multiple ? "checkbox" : "radio";
+          input.name = multiple ? name : name;
+          input.value = String(c.id);
+          label.appendChild(input);
+          label.appendChild(el("span", "opt-text", c.text));
+          if (c.image) label.appendChild(attachmentNode(c.image, "media", "opt-image"));
+          wrap.appendChild(label);
+          inputs.push(input);
+        });
+
+        var otherInput = null;
+        var otherText = null;
+        if (q.allow_other) {
+          var otherLabel = el("label", "opt");
+          otherInput = el("input");
+          otherInput.type = "checkbox";
+          otherInput.name = otherId;
+          otherInput.value = "__other__";
+          otherLabel.appendChild(otherInput);
+          otherLabel.appendChild(el("span", "opt-text", "Другое"));
+          wrap.appendChild(otherLabel);
+
+          otherText = el("input");
+          otherText.type = "text";
+          otherText.className = "other-input";
+          otherText.name = otherTextId;
+          otherText.placeholder = "Укажите свой вариант";
+          wrap.appendChild(otherText);
+
+          // «Другое» — эксклюзивный вариант
+          otherInput.addEventListener("change", function () {
+            if (otherInput.checked) {
+              inputs.forEach(function (i) { i.checked = false; });
+              otherText.classList.add("visible");
+            } else {
+              otherText.classList.remove("visible");
+            }
+          });
+          inputs.forEach(function (i) {
+            i.addEventListener("change", function () {
+              if (i.checked) {
+                otherInput.checked = false;
+                otherText.classList.remove("visible");
+              }
+            });
+          });
+        }
+        return { multiple: multiple, inputs: inputs, otherInput: otherInput, otherText: otherText };
+      }
+
+      function scaleFields(q, wrap) {
+        var choices = visibleChoices(q);
+        var row = el("div", "scale");
+        var inputs = [];
+        choices.forEach(function (c) {
+          var label = el("label");
+          var input = el("input");
+          input.type = "radio";
+          input.name = "q-" + q.id;
+          input.value = String(c.id);
+          label.appendChild(input);
+          label.appendChild(el("span", "", c.text));
+          if (c.image) label.appendChild(attachmentNode(c.image, "media", "opt-image"));
+          row.appendChild(label);
+          inputs.push(input);
+        });
+        wrap.appendChild(row);
+        return inputs;
+      }
 
       function renderQuestion(q, idx) {
-        var wrap = document.createElement("fieldset");
-        var legend = document.createElement("legend");
-        legend.textContent = idx + 1 + ". " + q.title;
-        wrap.appendChild(legend);
+        var wrap = el("fieldset");
+        wrap.dataset.qid = q.id;
+        wrap.dataset.qtype = q.question_type;
+        wrap.appendChild(el("legend", "", idx + 1 + ". " + q.title));
+        if (q.help_text) wrap.appendChild(el("p", "help", q.help_text));
+        if (q.file) wrap.appendChild(attachmentNode(q.file, q.file_type, "q-image"));
 
-        if (q.help_text) {
-          var help = document.createElement("p");
-          help.className = "help";
-          help.textContent = q.help_text;
-          wrap.appendChild(help);
-        }
-
-        var input;
-        if (q.question_type === "date") {
-          var isRange = q.date_format === "range";
-          if (isRange) {
-            var row = document.createElement("div");
-            row.className = "date-row";
-            var from = document.createElement("input");
-            from.type = "text";
-            from.name = "q-" + q.id + "-from";
-            from.placeholder = "ДД.ММ.ГГГГ (с)";
-            from.pattern = "\\d{2}\\.\\d{2}\\.\\d{4}";
-            from.required = Boolean(q.is_required);
-            var to = document.createElement("input");
-            to.type = "text";
-            to.name = "q-" + q.id + "-to";
-            to.placeholder = "ДД.ММ.ГГГГ (по)";
-            to.pattern = "\\d{2}\\.\\d{2}\\.\\d{4}";
-            to.required = Boolean(q.is_required);
-            row.appendChild(from);
-            row.appendChild(to);
-            wrap.appendChild(row);
-          } else {
-            input = document.createElement("input");
-            input.type = "text";
-            input.name = "q-" + q.id + "-from";
-            input.placeholder = "ДД.ММ.ГГГГ";
-            input.pattern = "\\d{2}\\.\\d{2}\\.\\d{4}";
-            input.required = Boolean(q.is_required);
-            wrap.appendChild(input);
-          }
+        var type = q.question_type;
+        if (type === "text") {
+          wrap.appendChild(textField(q));
+        } else if (type === "number") {
+          wrap.appendChild(numberField(q));
+        } else if (type === "date") {
+          dateFields(q, wrap);
+        } else if (type === "one_choice" || type === "multiple_choice") {
+          choiceFields(q, wrap);
+        } else if (type === "scale") {
+          scaleFields(q, wrap);
         } else {
-          // text, number и неизвестные типы — текстовое поле
-          input = document.createElement("textarea");
-          input.name = "q-" + q.id;
-          input.maxLength = q.max_characters || 1000;
-          input.placeholder = "Введите ответ";
-          input.required = Boolean(q.is_required);
-          wrap.appendChild(input);
+          // Неизвестный нам тип (файл, сопоставление, последовательность…)
+          unsupportedCount += 1;
+          wrap.appendChild(
+            el("div", "unsupported",
+              "Вопрос этого типа в нашей форме не поддерживается. " +
+              "Пройти опрос целиком можно с телефона по QR-коду справа.")
+          );
         }
         questionsEl.appendChild(wrap);
       }
 
+      function shownQuestions() {
+        return definition && definition.questions ? definition.questions : [];
+      }
+
       function buildAnswers() {
         var answers = [];
-        definition.questions.forEach(function (q) {
+        shownQuestions().forEach(function (q) {
           var base = {
             question: q.id,
             choices: [],
             text_answer: "",
             other_answer: null,
-            match_answer: {},
+            match_answer: {}
           };
-          if (q.question_type === "date") {
-            base.date_from = (formEl.elements["q-" + q.id + "-from"] || {}).value || null;
-            base.date_to = (formEl.elements["q-" + q.id + "-to"] || {}).value || null;
-            base.time_from = null;
-            base.time_to = null;
-          } else {
-            base.text_answer = (formEl.elements["q-" + q.id] || {}).value || "";
+          var type = q.question_type;
+
+          if (type === "date") {
+            base.date_from = valueOf("q-" + q.id + "-from");
+            base.date_to = valueOf("q-" + q.id + "-to");
+            base.time_from = valueOf("q-" + q.id + "-time-from");
+            base.time_to = valueOf("q-" + q.id + "-time-to");
+          } else if (type === "one_choice" || type === "multiple_choice") {
+            var checked = formEl.querySelectorAll('input[name="q-' + q.id + '-choice"]:checked');
+            Array.prototype.forEach.call(checked, function (i) {
+              base.choices.push(Number(i.value));
+            });
+            var other = formEl.elements["q-" + q.id + "-other"];
+            var otherText = formEl.elements["q-" + q.id + "-other-text"];
+            if (other && other.checked) {
+              base.choices = [];
+              base.other_answer = (otherText && otherText.value.trim()) || "";
+            }
+          } else if (type === "scale") {
+            var picked = formEl.querySelector('input[name="q-' + q.id + '"]:checked');
+            if (picked) base.choices.push(Number(picked.value));
+          } else if (type === "text" || type === "number") {
+            base.text_answer = valueOf("q-" + q.id);
           }
+          // Неизвестные типы отправляем как есть (пустыми) — платформа отклонит,
+          // если вопрос обязательный; пользователь увидит её текст ошибки.
           answers.push(base);
         });
         return answers;
+      }
+
+      function valueOf(name) {
+        var field = formEl.elements[name];
+        if (!field) return null;
+        var v = (field.value || "").trim();
+        return v === "" ? null : v;
+      }
+
+      // Проверка обязательных полей до отправки
+      function validate() {
+        var problems = [];
+        shownQuestions().forEach(function (q) {
+          if (!q.is_required) return;
+          var type = q.question_type;
+          if (type === "text" || type === "number") {
+            if (!valueOf("q-" + q.id)) problems.push("«" + q.title + "» — введите ответ");
+          } else if (type === "date") {
+            if (!valueOf("q-" + q.id + "-from")) problems.push("«" + q.title + "» — укажите дату");
+            if (q.date_format === "range" && !valueOf("q-" + q.id + "-to")) {
+              problems.push("«" + q.title + "» — укажите дату окончания");
+            }
+          } else if (type === "one_choice" || type === "multiple_choice") {
+            var checked = formEl.querySelectorAll('input[name="q-' + q.id + '-choice"]:checked').length;
+            var other = formEl.elements["q-" + q.id + "-other"];
+            var otherText = formEl.elements["q-" + q.id + "-other-text"];
+            var otherOk = other && other.checked && otherText && otherText.value.trim();
+            if (checked === 0 && !otherOk) problems.push("«" + q.title + "» — выберите вариант");
+          } else if (type === "scale") {
+            if (!formEl.querySelector('input[name="q-' + q.id + '"]:checked')) {
+              problems.push("«" + q.title + "» — выберите оценку");
+            }
+          } else if (type === "text" || type === "number") {
+            /* уже обработано */
+          }
+        });
+        if (!document.getElementById("consent").checked) {
+          problems.push("Отметьте согласие на обработку персональных данных");
+        }
+        return problems;
+      }
+
+      function showError(text) {
+        errorEl.textContent = text;
+        errorEl.hidden = false;
       }
 
       fetch("api/form")
@@ -191,6 +475,13 @@
         event.preventDefault();
         if (!definition) return;
         errorEl.hidden = true;
+
+        var problems = validate();
+        if (problems.length) {
+          showError(problems.join("\n"));
+          return;
+        }
+
         submitBtn.disabled = true;
 
         fetch("api/form-submit", {
@@ -209,12 +500,9 @@
               thanksEl.hidden = false;
               setTimeout(function () {
                 if (window.self !== window.top) {
-                  // Встроены в главную страницу (iframe) — сбрасываемся
-                  // к свежей форме для следующего участника
                   window.location.reload();
                 } else {
                   window.close();
-                  // если вкладку не удалось закрыть — возвращаемся на главную
                   setTimeout(function () { window.location.href = "/"; }, 300);
                 }
               }, 2500);
@@ -222,15 +510,17 @@
               var err = "Ошибка отправки";
               if (res.body && res.body.error) {
                 err = res.body.error.message || JSON.stringify(res.body.error);
+                if (res.body.error.errors) {
+                  var details = res.body.error.errors;
+                  err += ": " + (typeof details === "string" ? details : JSON.stringify(details));
+                }
               }
-              errorEl.textContent = err;
-              errorEl.hidden = false;
+              showError(err);
               submitBtn.disabled = false;
             }
           })
           .catch(function () {
-            errorEl.textContent = "Нет связи с сервером — попробуйте ещё раз.";
-            errorEl.hidden = false;
+            showError("Нет связи с сервером — попробуйте ещё раз.");
             submitBtn.disabled = false;
           });
       });

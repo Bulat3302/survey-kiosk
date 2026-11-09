@@ -9,6 +9,7 @@
 import hmac
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -24,6 +25,10 @@ DATA_FILE = os.path.join(DATA_DIR, "answers.jsonl")
 # Платформа опросов: адрес API и id формы, которую мы показываем
 FORMS_API = os.environ.get("FORMS_API_BASE", "https://forms.hr.alabuga.digital/api")
 FORM_UUID = os.environ.get("FORM_UUID", "ffca186d-804c-4245-874c-434581a59d96")
+
+# Токен для страницы настроек /setting/ (задаётся в .env)
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
 
 
 def extract_key(path, headers, body):
@@ -52,6 +57,49 @@ def safe_equal(a, b):
     return hmac.compare_digest(str(a), str(b))
 
 
+def extract_admin_token(path, headers, body):
+    for name in ("X-Admin-Token", "X-Admin-Key"):
+        if headers.get(name):
+            return headers[name]
+    auth = headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:]
+    query = parse_qs(urlparse(path).query)
+    if "token" in query:
+        return query["token"][0]
+    return ""
+
+
+UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+def default_form_url():
+    origin = FORMS_API
+    if origin.endswith("/api"):
+        origin = origin[:-4]
+    return f"{origin}/forms/{FORM_UUID}/pass"
+
+
+def load_config():
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        cfg = {}
+    return {
+        "uuid": cfg.get("uuid") or FORM_UUID,
+        "form_url": cfg.get("form_url") or default_form_url(),
+    }
+
+
+def save_config(form_url, uuid):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump({"form_url": form_url, "uuid": uuid}, f, ensure_ascii=False)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -63,14 +111,53 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _platform_form_def(self):
-        url = f"{FORMS_API}/forms/{FORM_UUID}/"
+    def _current_uuid(self):
+        return load_config()["uuid"]
+
+    def _answer_stats(self):
+        try:
+            with open(DATA_FILE, encoding="utf-8") as f:
+                lines = [line for line in f if line.strip()]
+        except FileNotFoundError:
+            lines = []
+        count = len(lines)
+        last_ts = json.loads(lines[-1]).get("ts") if lines else None
+        return count, last_ts
+
+    def _admin_ok(self, body):
+        token = extract_admin_token(self.path, self.headers, body)
+        if ADMIN_TOKEN and safe_equal(token, ADMIN_TOKEN):
+            return True
+        self._send_json(401, {"ok": False, "error": "invalid admin token"})
+        return False
+
+    def _resolve_form_uuid(self, url):
+        m = UUID_RE.search(url)
+        if m:
+            return m.group(0)
+        # Возможно, короткая ссылка — пробуем пройти по редиректам
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                final = resp.geturl()
+            m = UUID_RE.search(final)
+            if m:
+                return m.group(0)
+        except Exception:
+            pass
+        return None
+
+    def _fetch_form_def_by_uuid(self, uuid):
+        url = f"{FORMS_API}/forms/{uuid}/"
         with urllib.request.urlopen(url, timeout=10) as resp:
             return resp.status, resp.read().decode("utf-8", errors="replace")
 
+    def _platform_form_def(self):
+        return self._fetch_form_def_by_uuid(self._current_uuid())
+
     def _platform_complete(self, answers):
         req = urllib.request.Request(
-            f"{FORMS_API}/forms/{FORM_UUID}/complete",
+            f"{FORMS_API}/forms/{self._current_uuid()}/complete",
             data=json.dumps({"answers": answers}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -86,6 +173,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/health":
             self._send_json(200, {"ok": True})
+            return
+
+        # Ссылка на текущую форму — открыта (нужна для QR на главной)
+        if path == "/form-link":
+            self._send_json(200, {"ok": True, "form_url": load_config()["form_url"]})
             return
 
         # Определение формы (вопросы) — для нашей копии страницы опроса
@@ -136,6 +228,29 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(200, {"ok": True, "ts": latest_ts, "count": len(lines)})
                     return
                 time.sleep(0.5)
+
+        # Настройки: счётчик + текущая форма (нужен токен администратора)
+        if path == "/config":
+            if not self._admin_ok(""):
+                return
+            cfg = load_config()
+            count, last_ts = self._answer_stats()
+            title = None
+            try:
+                status, body = self._fetch_form_def_by_uuid(cfg["uuid"])
+                if 200 <= status < 300:
+                    title = json.loads(body).get("title")
+            except Exception:
+                pass
+            self._send_json(200, {
+                "ok": True,
+                "form_url": cfg["form_url"],
+                "uuid": cfg["uuid"],
+                "title": title,
+                "answers_count": count,
+                "last_ts": last_ts,
+            })
+            return
 
         key = extract_key(self.path, self.headers, "")
         if not API_KEY or not safe_equal(key, API_KEY):
@@ -189,6 +304,48 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 parsed = {"raw": body[:500]}
             self._send_json(status, parsed)
+            return
+
+        # Смена формы на другую (нужен токен администратора)
+        if path == "/config":
+            if not self._admin_ok(raw):
+                return
+            try:
+                new_url = (json.loads(raw).get("form_url") or "").strip()
+            except Exception:
+                new_url = ""
+            if not new_url:
+                self._send_json(400, {"ok": False, "error": "form_url required"})
+                return
+            uuid = self._resolve_form_uuid(new_url)
+            if not uuid:
+                self._send_json(400, {"ok": False, "error": "не удалось распознать идентификатор формы по ссылке"})
+                return
+            try:
+                status, body = self._fetch_form_def_by_uuid(uuid)
+            except Exception:
+                self._send_json(502, {"ok": False, "error": "платформа недоступна"})
+                return
+            if not (200 <= status < 300):
+                self._send_json(400, {"ok": False, "error": "форма не найдена (HTTP %d)" % status})
+                return
+            try:
+                form_def = json.loads(body)
+                questions = form_def.get("questions") or []
+                title = form_def.get("title")
+            except Exception:
+                questions, title = [], None
+            if not questions:
+                self._send_json(400, {"ok": False, "error": "в форме нет вопросов"})
+                return
+            save_config(new_url, uuid)
+            self._send_json(200, {
+                "ok": True,
+                "form_url": new_url,
+                "uuid": uuid,
+                "title": title,
+                "questions_count": len(questions),
+            })
             return
 
         key = extract_key(self.path, self.headers, raw)

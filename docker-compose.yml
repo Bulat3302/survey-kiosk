@@ -28,6 +28,8 @@ services:
       # API-ключ для вебхука берётся из файла .env рядом с этим файлом;
       # сам .env в гит не попадает (см. .gitignore). Образец — .env.example.
       API_KEY: "${API_KEY:?Задайте API_KEY в файле .env}"
+      # Токен для страницы настроек /setting/
+      ADMIN_TOKEN: "${ADMIN_TOKEN:?Задайте ADMIN_TOKEN в файле .env}"
       DATA_DIR: /data
     volumes:
       # Принятые анкеты: ./data/answers.jsonl

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Настройки стойки</title>
+<style>
+  :root {
+    --bg: #f5f7fb; --surface: #fff; --border: #dde3ec;
+    --text: #0f172a; --muted: #64748b;
+    --accent: #4f46e5; --accent-hover: #4338ca;
+    --ok: #16a34a; --err: #b91c1c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    background: var(--bg); color: var(--text); padding: 16px;
+  }
+  .wrap { max-width: 720px; margin: 24px auto; }
+  h1 { font-size: 22px; margin-bottom: 20px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 22px; margin-bottom: 18px;
+  }
+  .card h2 { font-size: 16px; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 10px; font: inherit; font-size: 15px;
+  }
+  input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  button {
+    margin-top: 14px; padding: 11px 18px; font-size: 15px; font-weight: 600;
+    color: #fff; background: var(--accent); border: 0; border-radius: 10px; cursor: pointer;
+  }
+  button:hover { background: var(--accent-hover); }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+  button.ghost:hover { background: #eef2ff; }
+
+  .kv { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
+  .kv:last-child { border-bottom: 0; }
+  .kv .k { color: var(--muted); }
+  .kv .v { text-align: right; word-break: break-all; font-weight: 600; }
+  .mono { font-family: Consolas, "Courier New", monospace; font-size: 13px; }
+
+  .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; display: none; }
+  .msg.ok { display: block; background: #f0fdf4; border: 1px solid #bbf7d0; color: var(--ok); }
+  .msg.err { display: block; background: #fef2f2; border: 1px solid #fecaca; color: var(--err); }
+  .msg.info { display: block; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Настройки стойки опросов</h1>
+
+  <div class="card">
+    <h2>Доступ</h2>
+    <label for="token">Токен администратора (из .env, переменная ADMIN_TOKEN)</label>
+    <input type="password" id="token" placeholder="Введите токен">
+    <button id="load" class="ghost">Показать данные</button>
+    <p class="msg info" id="token-hint">Токен сохраняется в этом браузере до перезагрузки страницы.</p>
+  </div>
+
+  <div class="card">
+    <h2>Статистика ответов</h2>
+    <div class="kv"><span class="k">Ответов получено</span><span class="v" id="count">—</span></div>
+    <div class="kv"><span class="k">Последний ответ</span><span class="v" id="last">—</span></div>
+    <div class="kv"><span class="k">Текущая форма</span><span class="v" id="title">—</span></div>
+    <div class="kv"><span class="k">Ссылка на форму</span><span class="v mono" id="url">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Сменить форму</h2>
+    <label for="newurl">Новая ссылка на оригинальную форму (или короткая ссылка)</label>
+    <input type="text" id="newurl" placeholder="https://forms.hr.alabuga.digital/forms/…/pass">
+    <button id="apply">Проверить и применить</button>
+    <p class="msg" id="msg"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TOKEN_KEY = "setting-admin-token";
+  var tokenEl = document.getElementById("token");
+  var loadBtn = document.getElementById("load");
+  var applyBtn = document.getElementById("apply");
+  var newUrlEl = document.getElementById("newurl");
+  var msgEl = document.getElementById("msg");
+
+  tokenEl.value = localStorage.getItem(TOKEN_KEY) || "";
+  tokenEl.addEventListener("change", function () {
+    localStorage.setItem(TOKEN_KEY, tokenEl.value.trim());
+  });
+
+  function headers() {
+    return { "X-Admin-Token": tokenEl.value.trim(), "Content-Type": "application/json" };
+  }
+
+  function showMsg(text, cls) {
+    msgEl.className = "msg " + cls;
+    msgEl.textContent = text;
+  }
+
+  function fmtTs(ts) {
+    if (!ts) return "—";
+    var d = new Date(ts);
+    return isNaN(d) ? ts : d.toLocaleString("ru-RU");
+  }
+
+  function loadStats() {
+    fetch("/api/config", { headers: headers() })
+      .then(function (r) {
+        return r.json().then(function (b) { return { status: r.status, body: b }; });
+      })
+      .then(function (res) {
+        if (res.status === 401) {
+          showMsg("Неверный токен", "err");
+          return;
+        }
+        if (!res.body || !res.body.ok) {
+          showMsg("Ошибка: " + (res.body && res.body.error ? res.body.error : "?"), "err");
+          return;
+        }
+        document.getElementById("count").textContent = res.body.answers_count;
+        document.getElementById("last").textContent = fmtTs(res.body.last_ts);
+        document.getElementById("title").textContent = res.body.title || "—";
+        document.getElementById("url").textContent = res.body.form_url;
+        if (!newUrlEl.value) newUrlEl.value = res.body.form_url;
+        showMsg("Данные обновлены", "ok");
+      })
+      .catch(function () {
+        showMsg("Нет связи с сервером", "err");
+      });
+  }
+
+  loadBtn.addEventListener("click", loadStats);
+
+  applyBtn.addEventListener("click", function () {
+    var url = newUrlEl.value.trim();
+    if (!url) { showMsg("Вставьте ссылку на форму", "err"); return; }
+    applyBtn.disabled = true;
+    showMsg("Проверяю…", "info");
+
+    fetch("/api/config", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ form_url: url }),
+    })
+      .then(function (r) {
+        return r.json().then(function (b) { return { status: r.status, body: b }; });
+      })
+      .then(function (res) {
+        if (res.status === 401) {
+          showMsg("Неверный токен", "err");
+          return;
+        }
+        if (res.body && res.body.ok) {
+          showMsg(
+            "Форма обновлена: «" + (res.body.title || "") + "», вопросов: " + res.body.questions_count +
+            ". Обновите стойку (Ctrl+F5).",
+            "ok"
+          );
+          loadStats();
+        } else {
+          showMsg("Не удалось применить: " + (res.body && res.body.error ? res.body.error : "?"), "err");
+        }
+      })
+      .catch(function () {
+        showMsg("Нет связи с сервером", "err");
+      })
+      .finally(function () {
+        applyBtn.disabled = false;
+      });
+  });
+})();
+</script>
+</body>
+</html>
