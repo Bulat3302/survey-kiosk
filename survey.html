@@ -72,6 +72,19 @@
     margin-top: 6px; border-radius: 8px; border: 1px solid var(--border);
   }
 
+  /* Шкала звёздами (как на платформе) */
+  .scale-hint { font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+  .scale-stars { display: flex; gap: 2px; margin: 2px 0 8px; }
+  .star {
+    background: none; border: 0; padding: 6px; margin: 0;
+    line-height: 0; cursor: pointer;
+    transition: transform .12s ease;
+  }
+  .star svg { fill: rgba(91, 94, 118, .09); stroke: #c3c7d6; stroke-width: 2; }
+  .star:hover svg { stroke: var(--accent); }
+  .star.star-on svg { fill: var(--accent); stroke: var(--accent); }
+  .star:active { transform: scale(0.94); }
+
   /* Шкала */
   .scale { display: flex; gap: 8px; flex-wrap: wrap; }
   .scale label {
@@ -136,6 +149,7 @@
     </div>
   </div>
 
+  <script src="js/wakelock.js?v=20261110"></script>
   <script>
     (function () {
       "use strict";
@@ -164,6 +178,16 @@
 
       // Вложение к вопросу: картинка (media) или ссылка на файл (document)
       var IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i;
+
+      // Иконка звезды — тот же контур, что на платформе (Lucide "star")
+      var STAR_SVG =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"' +
+        ' fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round"' +
+        ' stroke-linejoin="round" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31' +
+        ' 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123' +
+        ' 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973' +
+        ' 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53' +
+        ' 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg>';
 
       function fileName(url) {
         try {
@@ -206,6 +230,82 @@
         return area;
       }
 
+      /* ---------- Маски ввода даты и времени ---------- */
+
+      function digitsOnly(v) {
+        return String(v || "").replace(/\D/g, "");
+      }
+
+      function pad2(n) {
+        return (n < 10 ? "0" : "") + n;
+      }
+
+      // дд.мм.гггг: точки ставятся сами, день <= 31, месяц <= 12
+      function formatDateMask(raw) {
+        var d = digitsOnly(raw).slice(0, 8);
+        var day = d.slice(0, 2);
+        var mon = d.slice(2, 4);
+        var year = d.slice(4, 8);
+
+        if (day.length === 1 && Number(day) > 3) day = "0" + day;
+        if (day.length === 2) day = pad2(Math.min(31, Number(day)));
+        if (mon.length === 1 && Number(mon) > 1) mon = "0" + mon;
+        if (mon.length === 2) mon = pad2(Math.min(12, Number(mon)));
+
+        var out = day;
+        if (mon || d.length > 2) out += "." + mon;
+        if (year || d.length > 4) out += "." + year;
+        return out;
+      }
+
+      // чч.мм: точка ставится сама, часы <= 23, минуты <= 59
+      function formatTimeMask(raw) {
+        var d = digitsOnly(raw).slice(0, 4);
+        var hh = d.slice(0, 2);
+        var mm = d.slice(2, 4);
+
+        if (hh.length === 1 && Number(hh) > 2) hh = "0" + hh;
+        if (hh.length === 2) hh = pad2(Math.min(23, Number(hh)));
+        if (mm.length === 1 && Number(mm) > 5) mm = "0" + mm;
+        if (mm.length === 2) mm = pad2(Math.min(59, Number(mm)));
+
+        var out = hh;
+        if (mm || d.length > 2) out += "." + mm;
+        return out;
+      }
+
+      function attachMask(input, formatter) {
+        input.addEventListener("input", function () {
+          var formatted = formatter(input.value);
+          if (input.value !== formatted) {
+            input.value = formatted;
+          }
+        });
+        input.addEventListener("blur", function () {
+          input.value = formatter(input.value);
+        });
+      }
+
+      var DATE_RE = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+      var TIME_RE = /^(\d{2})\.(\d{2})$/;
+
+      function isValidDate(value) {
+        var m = DATE_RE.exec(value || "");
+        if (!m) return false;
+        var day = Number(m[1]);
+        var mon = Number(m[2]);
+        var year = Number(m[3]);
+        if (mon < 1 || mon > 12 || day < 1 || day > 31) return false;
+        var dt = new Date(year, mon - 1, day);
+        return dt.getFullYear() === year && dt.getMonth() === mon - 1 && dt.getDate() === day;
+      }
+
+      function isValidTime(value) {
+        var m = TIME_RE.exec(value || "");
+        if (!m) return false;
+        return Number(m[1]) < 24 && Number(m[2]) < 60;
+      }
+
       function numberField(q) {
         var input = el("input");
         input.type = "text";
@@ -222,32 +322,42 @@
         from.type = "text";
         from.name = "q-" + q.id + "-from";
         from.placeholder = isRange ? "ДД.ММ.ГГГГ (с)" : "ДД.ММ.ГГГГ";
-        from.setAttribute("pattern", "\\d{2}\\.\\d{2}\\.\\d{4}");
+        from.setAttribute("inputmode", "numeric");
+        from.setAttribute("maxlength", "10");
+        attachMask(from, formatDateMask);
         row.appendChild(from);
         if (isRange) {
           var to = el("input");
           to.type = "text";
           to.name = "q-" + q.id + "-to";
           to.placeholder = "ДД.ММ.ГГГГ (по)";
-          to.setAttribute("pattern", "\\d{2}\\.\\d{2}\\.\\d{4}");
+          to.setAttribute("inputmode", "numeric");
+          to.setAttribute("maxlength", "10");
+          attachMask(to, formatDateMask);
           row.appendChild(to);
         }
         wrap.appendChild(row);
 
-        // Время, если форма его требует
+        // Время, если форма его требует (вводим через точку, отправляем через двоеточие)
         if (q.time_format && q.time_format !== "none") {
           var timeRange = q.time_format === "range";
           var trow = el("div", "date-row");
           var tfrom = el("input");
           tfrom.type = "text";
           tfrom.name = "q-" + q.id + "-time-from";
-          tfrom.placeholder = timeRange ? "ЧЧ:ММ (с)" : "ЧЧ:ММ";
+          tfrom.placeholder = timeRange ? "ЧЧ.ММ (с)" : "ЧЧ.ММ";
+          tfrom.setAttribute("inputmode", "numeric");
+          tfrom.setAttribute("maxlength", "5");
+          attachMask(tfrom, formatTimeMask);
           trow.appendChild(tfrom);
           if (timeRange) {
             var tto = el("input");
             tto.type = "text";
             tto.name = "q-" + q.id + "-time-to";
-            tto.placeholder = "ЧЧ:ММ (по)";
+            tto.placeholder = "ЧЧ.ММ (по)";
+            tto.setAttribute("inputmode", "numeric");
+            tto.setAttribute("maxlength", "5");
+            attachMask(tto, formatTimeMask);
             trow.appendChild(tto);
           }
           wrap.appendChild(trow);
@@ -316,24 +426,58 @@
         return { multiple: multiple, inputs: inputs, otherInput: otherInput, otherText: otherText };
       }
 
+      // Шкала: как на платформе — первый вариант служит «нулём»,
+      // звёзды рисуются для остальных вариантов.
       function scaleFields(q, wrap) {
         var choices = visibleChoices(q);
-        var row = el("div", "scale");
-        var inputs = [];
-        choices.forEach(function (c) {
-          var label = el("label");
-          var input = el("input");
-          input.type = "radio";
-          input.name = "q-" + q.id;
-          input.value = String(c.id);
-          label.appendChild(input);
-          label.appendChild(el("span", "", c.text));
-          if (c.image) label.appendChild(attachmentNode(c.image, "media", "opt-image"));
-          row.appendChild(label);
-          inputs.push(input);
+        var hasZero = choices.length > 1;
+        var zero = hasZero ? choices[0] : null;
+        var stars = hasZero ? choices.slice(1) : choices;
+        var buttons = [];
+
+        wrap.dataset.scaleValue = "0";
+        wrap.dataset.scaleTouched = "0";
+        wrap.dataset.scaleZeroId = zero ? String(zero.id) : "";
+
+        function paint() {
+          var value = Number(wrap.dataset.scaleValue || 0);
+          buttons.forEach(function (btn, i) {
+            var on = i < value;
+            if (on) {
+              btn.classList.add("star-on");
+            } else {
+              btn.classList.remove("star-on");
+            }
+            btn.setAttribute("aria-pressed", on ? "true" : "false");
+          });
+        }
+
+        wrap.appendChild(el("p", "scale-hint", "Нажмите выбранную звезду ещё раз, чтобы установить 0."));
+
+        var group = el("div", "scale-stars");
+        group.setAttribute("role", "group");
+        group.setAttribute("aria-label", "Оценка");
+
+        stars.forEach(function (c, i) {
+          var btn = el("button");
+          btn.type = "button";
+          btn.className = "star";
+          btn.dataset.id = String(c.id);
+          btn.setAttribute("aria-label", "Оценка " + (i + 1));
+          btn.innerHTML = STAR_SVG;
+          btn.addEventListener("click", function () {
+            var current = Number(wrap.dataset.scaleValue || 0);
+            // Повторный клик по выбранной звезде сбрасывает оценку в 0
+            wrap.dataset.scaleValue = String(current === i + 1 ? 0 : i + 1);
+            wrap.dataset.scaleTouched = "1";
+            paint();
+          });
+          group.appendChild(btn);
+          buttons.push(btn);
         });
-        wrap.appendChild(row);
-        return inputs;
+
+        wrap.appendChild(group);
+        paint();
       }
 
       function renderQuestion(q, idx) {
@@ -386,8 +530,9 @@
           if (type === "date") {
             base.date_from = valueOf("q-" + q.id + "-from");
             base.date_to = valueOf("q-" + q.id + "-to");
-            base.time_from = valueOf("q-" + q.id + "-time-from");
-            base.time_to = valueOf("q-" + q.id + "-time-to");
+            // Вводим время через точку (чч.мм), платформа принимает только HH:MM
+            base.time_from = timeToPayload(valueOf("q-" + q.id + "-time-from"));
+            base.time_to = timeToPayload(valueOf("q-" + q.id + "-time-to"));
           } else if (type === "one_choice" || type === "multiple_choice") {
             var checked = formEl.querySelectorAll('input[name="q-' + q.id + '-choice"]:checked');
             Array.prototype.forEach.call(checked, function (i) {
@@ -400,8 +545,18 @@
               base.other_answer = (otherText && otherText.value.trim()) || "";
             }
           } else if (type === "scale") {
-            var picked = formEl.querySelector('input[name="q-' + q.id + '"]:checked');
-            if (picked) base.choices.push(Number(picked.value));
+            var fs = formEl.querySelector('fieldset[data-qid="' + q.id + '"]');
+            var value = fs ? Number(fs.dataset.scaleValue || 0) : 0;
+            var touched = fs && fs.dataset.scaleTouched === "1";
+            var visible = visibleChoices(q);
+            var hasZero = visible.length > 1;
+            var starChoices = hasZero ? visible.slice(1) : visible;
+            if (value > 0 && starChoices[value - 1]) {
+              base.choices.push(Number(starChoices[value - 1].id));
+            } else if (touched && hasZero) {
+              // Явно выставленный 0 — это первый вариант шкалы
+              base.choices.push(Number(visible[0].id));
+            }
           } else if (type === "text" || type === "number") {
             base.text_answer = valueOf("q-" + q.id);
           }
@@ -419,6 +574,12 @@
         return v === "" ? null : v;
       }
 
+      // чч.мм -> HH:MM (формат платформы)
+      function timeToPayload(value) {
+        if (!value) return null;
+        return String(value).replace(/\./g, ":");
+      }
+
       // Проверка обязательных полей до отправки
       function validate() {
         var problems = [];
@@ -428,9 +589,34 @@
           if (type === "text" || type === "number") {
             if (!valueOf("q-" + q.id)) problems.push("«" + q.title + "» — введите ответ");
           } else if (type === "date") {
-            if (!valueOf("q-" + q.id + "-from")) problems.push("«" + q.title + "» — укажите дату");
-            if (q.date_format === "range" && !valueOf("q-" + q.id + "-to")) {
-              problems.push("«" + q.title + "» — укажите дату окончания");
+            var dateFrom = valueOf("q-" + q.id + "-from");
+            var dateTo = valueOf("q-" + q.id + "-to");
+            var isRange = q.date_format === "range";
+            if (!dateFrom) {
+              problems.push("«" + q.title + "» — укажите дату");
+            } else if (!isValidDate(dateFrom)) {
+              problems.push("«" + q.title + "» — дата должна быть в формате ДД.ММ.ГГГГ");
+            }
+            if (isRange) {
+              if (!dateTo) {
+                problems.push("«" + q.title + "» — укажите дату окончания");
+              } else if (!isValidDate(dateTo)) {
+                problems.push("«" + q.title + "» — дата окончания в формате ДД.ММ.ГГГГ");
+              }
+            }
+            if (q.time_format && q.time_format !== "none") {
+              var timeFrom = valueOf("q-" + q.id + "-time-from");
+              var timeTo = valueOf("q-" + q.id + "-time-to");
+              if (q.time_format === "range") {
+                if (!timeFrom || !isValidTime(timeFrom)) {
+                  problems.push("«" + q.title + "» — время начала в формате ЧЧ.ММ");
+                }
+                if (!timeTo || !isValidTime(timeTo)) {
+                  problems.push("«" + q.title + "» — время окончания в формате ЧЧ.ММ");
+                }
+              } else if (!timeFrom || !isValidTime(timeFrom)) {
+                problems.push("«" + q.title + "» — время в формате ЧЧ.ММ");
+              }
             }
           } else if (type === "one_choice" || type === "multiple_choice") {
             var checked = formEl.querySelectorAll('input[name="q-' + q.id + '-choice"]:checked').length;
@@ -439,7 +625,10 @@
             var otherOk = other && other.checked && otherText && otherText.value.trim();
             if (checked === 0 && !otherOk) problems.push("«" + q.title + "» — выберите вариант");
           } else if (type === "scale") {
-            if (!formEl.querySelector('input[name="q-' + q.id + '"]:checked')) {
+            var scaleFs = formEl.querySelector('fieldset[data-qid="' + q.id + '"]');
+            var scaleValue = scaleFs ? Number(scaleFs.dataset.scaleValue || 0) : 0;
+            var scaleTouched = scaleFs && scaleFs.dataset.scaleTouched === "1";
+            if (scaleValue === 0 && !scaleTouched) {
               problems.push("«" + q.title + "» — выберите оценку");
             }
           } else if (type === "text" || type === "number") {
